@@ -60,7 +60,7 @@ class FoldingJob(Job):
     def result_valid(self) -> bool:
         return not not self.foldings
 
-    def set_result(self, result: List[Tuple[Protein, str | bytes]]):
+    def set_result(self, result: List[Protein]):
         if not self.proteins:
             raise NoLabsException(ErrorCodes.invalid_job_input)
 
@@ -69,14 +69,11 @@ class FoldingJob(Job):
 
         self.foldings = []
 
-        for protein, pdb in result:
-            if not [p for p in self.proteins if p.iid == protein.iid]:
-                raise NoLabsException(ErrorCodes.protein_not_found_in_job_inputs)
-
+        for protein in result:
             self.foldings.append(
                 FoldingJobResult(
                     protein_id=protein.iid.value,
-                    pdb_content=pdb if isinstance(pdb, bytes) else pdb.encode('utf-8')
+                    pdb_content=protein.pdb_content
                 )
             )
 

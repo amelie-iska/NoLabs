@@ -16,7 +16,7 @@ from mongoengine import Q
 from nolabs.exceptions import NoLabsException, ErrorCodes
 from nolabs.application.use_cases.folding.api_models import GetJobStatusResponse, JobResult, JobResponse, \
     SetupJobRequest
-from nolabs.domain.models.common import JobId, Experiment, JobName, Protein
+from nolabs.domain.models.common import JobId, Experiment, JobName, Protein, ProteinName
 from nolabs.domain.models.folding import FoldingJob, FoldingBackendEnum
 from nolabs.utils import generate_uuid
 
@@ -26,7 +26,7 @@ def map_job_to_response(job: FoldingJob) -> JobResponse:
         job_id=job.iid.value,
         job_name=job.name.value,
         backend=FoldingBackendEnum(job.backend),
-        protein_ids=[p.iid.value for p in job.proteins],
+        protein_ids=[f.protein_id for f in job.foldings],
         result=[
             JobResult(
                 protein_id=item.protein_id,
@@ -168,10 +168,11 @@ class RunJobFeature:
         if not job:
             raise NoLabsException(ErrorCodes.job_not_found)
 
-        result: List[Tuple[Protein, str]] = []
         try:
             job.started()
             await job.save()
+
+            result = []
 
             for protein in job.proteins:
                 sequence = protein.get_amino_acid_sequence()
@@ -185,17 +186,18 @@ class RunJobFeature:
                 if errors:
                     raise NoLabsException(ErrorCodes.folding_run_error, errors)
 
-                result.append((protein, pdb_content))
+                new_protein = Protein.create(
+                    experiment=job.experiment,
+                    name=ProteinName(f'{str(protein.name)}-created-{job.backend.value}'),
+                    fasta_content=protein.fasta_content,
+                    pdb_content=pdb_content
+                )
+                new_protein.save()
+                result.append(new_protein)
 
-            job.set_result(result=[
-                (protein, pdb) for protein, pdb in result
-            ])
+            job.set_result(result=result)
 
             await job.save(cascade=True)
-
-            for protein, pdb in result:
-                protein.set_pdb(pdb)
-                protein.save()
 
         finally:
             job.finished()
